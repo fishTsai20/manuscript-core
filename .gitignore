@@ -1,6 +1,10 @@
 .idea
 .Ds_Store
 flink/runner/target
+flink/runner/libs
+flink/runner/checkpoint
 examples/*/data/
 manuscript/
 dist/
+flink/data/
+flink/runner/runner.iml

@@ -401,7 +401,7 @@ func selectTable(chains []*client.ChainBaseDatasetListItem, selectedChain, promp
 }
 
 func promptOutputTarget() string {
-	fmt.Println("\033[33m📍 4. Please select a data output target:\033[0m")
+	fmt.Println("\033[33m📍 5. Please select a data output target:\033[0m")
 	fmt.Println("1: Postgresql")
 	fmt.Println("2: Print (output to console)")
 	outputChoice := promptInput("Enter your choice(default is Postgresql)\u001B[0m: ", "1")
