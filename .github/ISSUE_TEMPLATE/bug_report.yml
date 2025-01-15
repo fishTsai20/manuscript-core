@@ -20,7 +20,12 @@ body:
       label: Environment
       description: Tell us about your environment
       placeholder: >
-        Tell us what you're using it: Docker, Flink, Manuscript etc.
+        Please provide:
+        - manuscript-core version
+        - Docker Desktop Version
+        - System OS Information
+
+        If manuscript-cli is installed, run `manuscript cli version -v` and paste the output here.
     validations:
       required: true
 

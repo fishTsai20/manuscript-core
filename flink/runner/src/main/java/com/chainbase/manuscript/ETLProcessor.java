@@ -106,13 +106,12 @@ public class ETLProcessor {
   }
 
   private void configureFlink() {
-    String currentDir = System.getProperty("user.dir");
     Configuration conf = tEnv.getConfig().getConfiguration();
     conf.setString("table.local-time-zone", "UTC");
     conf.setString("table.exec.sink.upsert-materialize", "NONE");
     conf.setString("state.backend.type", "rocksdb");
-    conf.setString("state.checkpoints.dir", "file://"+currentDir+"/checkpoint");
-    conf.setString("state.savepoints.dir", "file://"+currentDir+"/savepoint");
+    conf.setString("state.checkpoints.dir", "file:///opt/flink/checkpoint");
+    conf.setString("state.savepoints.dir", "file:///opt/flink/savepoint");
     conf.setString("execution.checkpointing.interval", "60s");
     conf.setString("execution.checkpointing.min-pause", "1s");
     conf.setString("execution.checkpointing.externalized-checkpoint-retention",
@@ -330,26 +329,29 @@ public class ETLProcessor {
     logger.info("Creating Kafka sink...");
     String flinkSchema = getSchemaFromTransform(sink.get("from").toString());
     String sql = String.format(
-        "CREATE TABLE %s (%s) WITH (" +
-            "  'connector' = 'kafka'," +
-            "  'topoc' = '%s'," +
-            "  'properties.bootstrap.servers' = '%s'," +
-            "  'properties.security.protocol' = 'SASL_SSL'," +
-            "  'properties.ssl.truststore.location' = '%s'," +
-            "  'properties.ssl.truststore.password' = '%s'," +
-            "  'properties.sasl.mechanism' = 'PLAIN'," +
-            "  'properties.ssl.endpoint.identification.algorithm' = ''," +
-            "  'properties.sasl.jaas.config' = 'org.apache.kafka.common.security.plain.PlainLoginModule required username=\"%s\" password=\"%s\";',"
-            +
-            ")",
-        sink.get("name"), sink.get("kafka_servers"),
-        sink.get("truststore_location"), sink.get("truststore_password"),
-        ((Map<String, Object>) sink.get("config")).get("username"),
-        ((Map<String, Object>) sink.get("config")).get("password")
+            "CREATE TABLE %s (%s) WITH (" +
+                    "  'connector' = 'kafka'," +
+                    "  'topic' = '%s'," +
+                    "  'properties.bootstrap.servers' = '%s'," +
+                    "  'properties.security.protocol' = 'SASL_SSL'," +
+                    "  'properties.ssl.truststore.location' = '%s'," +
+                    "  'properties.ssl.truststore.password' = '%s'," +
+                    "  'properties.sasl.mechanism' = 'PLAIN'," +
+                    "  'properties.ssl.endpoint.identification.algorithm' = ''," +
+                    "  'properties.sasl.jaas.config' = 'org.apache.kafka.common.security.plain.PlainLoginModule required username=\"%s\" password=\"%s\"'" +
+                    ")",
+            sink.get("name"), flinkSchema,
+            sink.get("topic"),
+            sink.get("kafka_servers"),
+            sink.get("truststore_location"),
+            sink.get("truststore_password"),
+            ((Map<String, Object>) sink.get("config")).get("username"),
+            ((Map<String, Object>) sink.get("config")).get("password")
     );
-    logger.info("Executing SQL for StarRocks sink: {}", sql);
+
+    logger.info("Executing SQL for Kafka sink: {}", sql);
     tEnv.executeSql(sql);
-    logger.info("StarRocks sink created successfully.");
+    logger.info("Kafka sink created successfully.");
   }
 
   private void createPostgresSink(Map<String, Object> sink) {
@@ -525,7 +527,7 @@ public class ETLProcessor {
   }
 
   public static void main(String[] args) throws Exception {
-    String configPath = args.length > 0 ? args[0] : "manuscript.yaml";
+    String configPath = args.length > 0 ? args[0] : "com/chainbase/manuscript/manuscript.yaml";
     ETLProcessor processor = new ETLProcessor(configPath);
     processor.execute();
   }

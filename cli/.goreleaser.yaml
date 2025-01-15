@@ -1,0 +1,36 @@
+version: 2
+
+project_name: manuscript-cli
+
+before:
+  hooks:
+    - go mod download
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+      - VERSION=$(curl -s https://api.github.com/repos/chainbase-labs/manuscript-core/releases/latest | grep 'tag_name' | cut -d'"' -f4)
+    goos:
+      - linux
+      - windows
+      - darwin
+    ldflags:
+        - -s -w
+        - -X commands.version={{.Version}}
+
+archives:
+  - format: tar.gz
+    name_template: >-
+      manuscript-core-{{.Os }}-{{.Arch}}
+    format_overrides:
+      - goos: windows
+        format: zip
+checksum:
+  name_template: "manuscript-core-checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
