@@ -259,7 +259,7 @@ impl IntoIterator for DataDictionary {
 
 #[derive(Clone, Debug)]
 pub enum AppUpdate {
-    SteupResult(String),
+    SetupResult(String),
     SetupProgress(SetupStep, SetupStepStatus),
     SetupComplete,
     SetupFailed(String, SetupStep),
@@ -489,7 +489,7 @@ impl App {
             if let Some(receiver) = &mut self.update_receiver {
                 match receiver.try_recv() {
                     Ok(update) => match update {
-                        AppUpdate::SteupResult(msg) => {
+                        AppUpdate::SetupResult(msg) => {
                             self.debug_result = Some(msg);
                         },
                         AppUpdate::SetupProgress(step, status) => {
@@ -1148,7 +1148,7 @@ impl App {
         self.docker_setup_timer = 0;
         
         if let Some(sender) = &self.update_sender {
-            let _ = sender.send(AppUpdate::SteupResult(
+            let _ = sender.send(AppUpdate::SetupResult(
                 "Executing in the debug environment...".to_string()
             )).await;
         }
@@ -1161,7 +1161,7 @@ impl App {
                 if !self.should_cancel_setup {
                     if let Some(sender) = &self.update_sender {
                         let _ = sender.send(AppUpdate::SetupComplete).await;
-                        let _ = sender.send(AppUpdate::SteupResult(msg)).await;
+                        let _ = sender.send(AppUpdate::SetupResult(msg)).await;
                     }
                 }
             },
