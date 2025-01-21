@@ -30,7 +30,7 @@ under the License.
 	<properties>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<flink.version>1.18.1</flink.version>
-		<target.java.version>1.8</target.java.version>
+		<target.java.version>1.11</target.java.version>
 		<scala.binary.version>2.12</scala.binary.version>
 		<maven.compiler.source>${target.java.version}</maven.compiler.source>
 		<maven.compiler.target>${target.java.version}</maven.compiler.target>
@@ -192,20 +192,35 @@ under the License.
 			<version>0.8.1</version>
 		</dependency>
 		<dependency>
+			<groupId>org.apache.hadoop</groupId>
+			<artifactId>hadoop-common</artifactId>
+			<version>2.8.3</version>
+		</dependency>
+
+		<dependency>
+			<groupId>org.apache.hadoop</groupId>
+			<artifactId>hadoop-hdfs</artifactId>
+			<version>2.8.3</version>
+		</dependency>
+<!--		<dependency>-->
+<!--			<groupId>org.apache.flink</groupId>-->
+<!--			<artifactId>flink-shaded-hadoop-2-uber-2.8.3</artifactId>-->
+<!--			<version>10.0</version>-->
+<!--			<exclusions>-->
+<!--				<exclusion>-->
+<!--					<groupId>com.squareup.okhttp3</groupId>-->
+<!--					<artifactId>okhttp</artifactId>-->
+<!--				</exclusion>-->
+<!--				<exclusion>-->
+<!--					<groupId>com.squareup.okio</groupId>-->
+<!--					<artifactId>okio</artifactId>-->
+<!--				</exclusion>-->
+<!--			</exclusions>-->
+<!--		</dependency>-->
+		<dependency>
 			<groupId>org.apache.flink</groupId>
 			<artifactId>flink-dist</artifactId>
 			<version>1.18.1</version>
-			<exclusions>
-				<exclusion>
-					<groupId>com.squareup.okhttp3</groupId>
-					<artifactId>okhttp</artifactId>
-				</exclusion>
-			</exclusions>
-		</dependency>
-		<dependency>
-			<groupId>org.apache.flink</groupId>
-			<artifactId>flink-shaded-hadoop-2-uber-2.8.3</artifactId>
-			<version>10.0</version>
 			<exclusions>
 				<exclusion>
 					<groupId>com.squareup.okhttp3</groupId>
@@ -330,6 +345,14 @@ under the License.
 
 	<build>
 		<plugins>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-surefire-plugin</artifactId>
+				<version>3.1.0</version> <!-- 确保版本较新 -->
+				<configuration>
+					<argLine>-verbose:class</argLine>
+				</configuration>
+			</plugin>
 
 			<!-- Java Compiler -->
 			<plugin>

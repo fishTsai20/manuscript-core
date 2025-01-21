@@ -8,3 +8,4 @@ manuscript/
 dist/
 flink/data/
 flink/runner/runner.iml
+flink/lib
