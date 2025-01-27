@@ -4,7 +4,9 @@ services:
   jobmanager:
     image: ${MS_FLINK_IMAGE:-ms_flink}
     user: "flink"
-    command: "standalone-job --job-classname com.chainbase.manuscript.ETLProcessor /opt/flink/manuscript.yaml --fromSavepoint /opt/flink/savepoint"
+    command: "standalone-job -Dclassloader.resolve-order=child-first --job-classname com.chainbase.manuscript.ETLProcessor /opt/flink/manuscript.yaml --fromSavepoint /opt/flink/savepoint"
+    ports:
+    - "8081:8081"
     volumes:
       - ${MANUSCRIPT_DATA_PATH:-./data}/statuspoint/checkpoint:/opt/flink/checkpoint
       - ${MANUSCRIPT_DATA_PATH:-./data}/statuspoint/savepoint:/opt/flink/savepoint

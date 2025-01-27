@@ -1,6 +1,11 @@
 package com.chainbase.manuscript;
 
 import com.chainbase.udf.*;
+import freemarker.template.Template;
+import freemarker.template.TemplateExceptionHandler;
+
+import java.io.StringWriter;
+
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.table.api.EnvironmentSettings;
@@ -30,6 +35,7 @@ import static org.apache.flink.table.api.Expressions.$;
 import static org.apache.flink.table.api.Expressions.call;
 
 public class ETLProcessor {
+
     private static final Logger logger = LoggerFactory.getLogger(ETLProcessor.class);
     private Map<String, Object> config;
     private StreamExecutionEnvironment env;
@@ -42,8 +48,10 @@ public class ETLProcessor {
         this.env.setParallelism((Integer) config.get("parallelism"));
         EnvironmentSettings settings = EnvironmentSettings.newInstance().inStreamingMode().build();
         this.tEnv = StreamTableEnvironment.create(env, settings);
+        String ck_dir = (String) config.computeIfAbsent("state_checkpoints_dir", k -> "file:///opt/flink/checkpoint");
+        String sv_dir = (String) config.computeIfAbsent("state_savepoints_dir", k -> "file:///opt/flink/savepoint");
 
-        configureFlink();
+        configureFlink(ck_dir, sv_dir);
         createPaimonCatalog();
     }
 
@@ -101,16 +109,17 @@ public class ETLProcessor {
         }
     }
 
-    private void configureFlink() {
+    private void configureFlink(String ck_dir, String sv_dir) {
         Configuration conf = tEnv.getConfig().getConfiguration();
         conf.setString("table.local-time-zone", "UTC");
         conf.setString("table.exec.sink.upsert-materialize", "NONE");
         conf.setString("state.backend.type", "rocksdb");
-        conf.setString("state.checkpoints.dir", "file:///opt/flink/checkpoint");
-        conf.setString("state.savepoints.dir", "file:///opt/flink/savepoint");
+        conf.setString("state.checkpoints.dir", ck_dir);
+        conf.setString("state.savepoints.dir", sv_dir);
         conf.setString("execution.checkpointing.interval", "60s");
         conf.setString("execution.checkpointing.min-pause", "1s");
-        conf.setString("execution.checkpointing.externalized-checkpoint-retention", "RETAIN_ON_CANCELLATION");
+        conf.setString("execution.checkpointing.externalized-checkpoint-retention",
+                "RETAIN_ON_CANCELLATION");
         conf.setString("execution.checkpointing.timeout", "30 min");
         conf.setString("execution.checkpointing.max-concurrent-checkpoints", "1");
         conf.setString("state.backend.incremental", "true");
@@ -156,6 +165,7 @@ public class ETLProcessor {
 
         tEnv.createTemporarySystemFunction("ROW_TO_JSON", RowToJsonFunction.class);
         tEnv.createTemporarySystemFunction("ARRAY_TO_JSON", ArrayToJsonFunction.class);
+        tEnv.createTemporarySystemFunction("GET_TOKEN_META", GetTokenMeta.class);
     }
 
     private void createSources() {
@@ -174,7 +184,7 @@ public class ETLProcessor {
         }
     }
 
-    private void createTransforms() {
+    private void createTransforms() throws Exception {
         tEnv.useCatalog("default_catalog");
         List<Map<String, Object>> transforms = (List<Map<String, Object>>) config.get("transforms");
         logger.info("Creating transforms:");
@@ -182,11 +192,27 @@ public class ETLProcessor {
             String name = transform.get("name").toString();
             String sql = transform.get("sql").toString();
             logger.info("  Creating transform: {}", name);
+            Map<String, Object> params = (Map<String, Object>) transform.getOrDefault(
+                    "params", null);
+            if (params != null) {
+                sql = render(name, sql, params);
+            }
             logger.info("  SQL: {}", sql);
             tEnv.createTemporaryView(name, tEnv.sqlQuery(sql));
             logger.info("  Transform created successfully: {}", name);
         }
         logger.info("All transforms created.");
+    }
+
+    private String render(String name, String sql, Map<String, Object> params) throws Exception {
+        freemarker.template.Configuration freemarkerConfig = new freemarker.template.Configuration(
+                freemarker.template.Configuration.VERSION_2_3_31);
+        freemarkerConfig.setDefaultEncoding("UTF-8");
+        freemarkerConfig.setTemplateExceptionHandler(TemplateExceptionHandler.RETHROW_HANDLER);
+        Template template = new Template(name, sql, freemarkerConfig);
+        StringWriter stringWriter = new StringWriter();
+        template.process(params, stringWriter);
+        return stringWriter.toString();
     }
 
     private void createSinks() {
@@ -206,6 +232,9 @@ public class ETLProcessor {
                     break;
                 case "filesystem":
                     createFilesystemSink(sink);
+                    break;
+                case "kafka":
+
                     break;
                 default:
                     String errorMessage = "Unsupported sink type: " + sinkType;
@@ -244,11 +273,11 @@ public class ETLProcessor {
     private String mapFlinkTypeToPostgresType(String flinkType) {
         // Remove NOT NULL from the type string if present
         String baseType = flinkType.replace(" NOT NULL", "").toUpperCase();
-        
+
         if (baseType.startsWith("VARCHAR(") && baseType.endsWith(")")) {
             return baseType;
         }
-        
+
         switch (baseType) {
             case "VARCHAR":
                 return "VARCHAR";
@@ -300,6 +329,35 @@ public class ETLProcessor {
         }
     }
 
+    private void createKafkaSink(Map<String, Object> sink) {
+        logger.info("Creating Kafka sink...");
+        String flinkSchema = getSchemaFromTransform(sink.get("from").toString());
+        String sql = String.format(
+                "CREATE TABLE %s (%s) WITH (" +
+                        "  'connector' = 'kafka'," +
+                        "  'topic' = '%s'," +
+                        "  'properties.bootstrap.servers' = '%s'," +
+                        "  'properties.security.protocol' = 'SASL_SSL'," +
+                        "  'properties.ssl.truststore.location' = '%s'," +
+                        "  'properties.ssl.truststore.password' = '%s'," +
+                        "  'properties.sasl.mechanism' = 'PLAIN'," +
+                        "  'properties.ssl.endpoint.identification.algorithm' = ''," +
+                        "  'properties.sasl.jaas.config' = 'org.apache.kafka.common.security.plain.PlainLoginModule required username=\"%s\" password=\"%s\"'" +
+                        ")",
+                sink.get("name"), flinkSchema,
+                sink.get("topic"),
+                sink.get("kafka_servers"),
+                sink.get("truststore_location"),
+                sink.get("truststore_password"),
+                ((Map<String, Object>) sink.get("config")).get("username"),
+                ((Map<String, Object>) sink.get("config")).get("password")
+        );
+
+        logger.info("Executing SQL for Kafka sink: {}", sql);
+        tEnv.executeSql(sql);
+        logger.info("Kafka sink created successfully.");
+    }
+
     private void createPostgresSink(Map<String, Object> sink) {
         logger.info("Creating PostgreSQL sink...");
         String flinkSchema = getSchemaFromTransform(sink.get("from").toString());
@@ -308,17 +366,19 @@ public class ETLProcessor {
         String schemaName = sink.get("schema").toString();
         String tableName = sink.get("table").toString();
         String primaryKey = sink.get("primary_key").toString();
-        String username = ((Map<String, Object>)sink.get("config")).get("username").toString();
-        String password = ((Map<String, Object>)sink.get("config")).get("password").toString();
-        String host = ((Map<String, Object>)sink.get("config")).get("host").toString();
-        String port = ((Map<String, Object>)sink.get("config")).get("port").toString();
+        String username = ((Map<String, Object>) sink.get("config")).get("username").toString();
+        String password = ((Map<String, Object>) sink.get("config")).get("password").toString();
+        String host = ((Map<String, Object>) sink.get("config")).get("host").toString();
+        String port = ((Map<String, Object>) sink.get("config")).get("port").toString();
 
         logger.info("Connecting to PostgreSQL and creating database/table if not exists...");
-        try (Connection conn = DriverManager.getConnection("jdbc:postgresql://" + host + ":" + port + "/postgres", username, password);
+        try (Connection conn = DriverManager.getConnection(
+                "jdbc:postgresql://" + host + ":" + port + "/postgres", username, password);
              Statement stmt = conn.createStatement()) {
-            
+
             // Check if database exists
-            ResultSet rs = stmt.executeQuery("SELECT 1 FROM pg_database WHERE datname = '" + database + "'");
+            ResultSet rs = stmt.executeQuery(
+                    "SELECT 1 FROM pg_database WHERE datname = '" + database + "'");
             if (!rs.next()) {
                 // Create database if it doesn't exist
                 stmt.execute("CREATE DATABASE " + database);
@@ -326,17 +386,20 @@ public class ETLProcessor {
             } else {
                 logger.info("Database already exists: {}", database);
             }
-            
+
             // Connect to the new database
-            try (Connection dbConn = DriverManager.getConnection("jdbc:postgresql://" + host + ":" + port + "/" + database, username, password);
+            try (Connection dbConn = DriverManager.getConnection(
+                    "jdbc:postgresql://" + host + ":" + port + "/" + database, username, password);
                  Statement dbStmt = dbConn.createStatement()) {
-                
+
                 // Create schema if it doesn't exist
                 dbStmt.execute("CREATE SCHEMA IF NOT EXISTS " + schemaName);
                 logger.info("Schema created or already exists: {}", schemaName);
-                
+
                 // Create table if it doesn't exist
-                String createTableSQL = "CREATE TABLE IF NOT EXISTS " + schemaName + "." + tableName + " (" + postgresSchema + ", PRIMARY KEY (" + primaryKey + "))";
+                String createTableSQL =
+                        "CREATE TABLE IF NOT EXISTS " + schemaName + "." + tableName + " (" + postgresSchema
+                                + ", PRIMARY KEY (" + primaryKey + "))";
                 logger.info("Creating table: {}", createTableSQL);
                 dbStmt.execute(createTableSQL);
                 logger.info("Table created or already exists: {}.{}", schemaName, tableName);
@@ -378,8 +441,8 @@ public class ETLProcessor {
                         ")",
                 sink.get("name"), schema, sink.get("database"),
                 sink.get("database"), sink.get("table"),
-                ((Map<String, Object>)sink.get("config")).get("username"),
-                ((Map<String, Object>)sink.get("config")).get("password")
+                ((Map<String, Object>) sink.get("config")).get("username"),
+                ((Map<String, Object>) sink.get("config")).get("password")
         );
         logger.info("Executing SQL for StarRocks sink: {}", sql);
         tEnv.executeSql(sql);
@@ -468,7 +531,7 @@ public class ETLProcessor {
     }
 
     public static void main(String[] args) throws Exception {
-        String configPath = args.length > 0 ? args[0] : "manuscript.yaml";
+        String configPath = args.length > 0 ? args[0] : "com/chainbase/manuscript/manuscript.yaml";
         ETLProcessor processor = new ETLProcessor(configPath);
         processor.execute();
     }
