@@ -8,7 +8,3 @@ manuscript/
 dist/
 flink/data/
 flink/runner/runner.iml
-flink/lib
-flink/checkpoint
-flink/data
-flink/lib
