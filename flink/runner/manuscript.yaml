@@ -1,8 +1,6 @@
-name: ethereum_token_metas_to_postgres
+name: token_metas
 specVersion: v0.1.0
 parallelism: 1
-#state_checkpoints_dir: file:///$home/manuscript-core/flink/checkpoint
-#state_savepoints_dir: file:///$home/manuscript-core/flink/savepoint
 
 sources:
   - name: ethereum_contracts
@@ -70,18 +68,18 @@ transforms:
               FROM ethereum_contracts
           ) o;
     params:
-      node: https://api.zan.top/node/v1/eth/mainnet/public
+        node: https://ethereum-mainnet.s.chainbase.online/v1/2QobCMxPQBtZGW66iiCpf0fbJJu
 
 sinks:
-  - name: ethereum_token_metas_sink_pg
-    type: postgres
-    from: ethereum_token_metas
-    database: ethereum
-    schema: public
-    table: token_metas
-    primary_key: contract_address
-    config:
-      host: postgres
-      port: 5432
-      username: postgres
-      password: postgres
+- name: ethereum_token_metas_sink_pg
+  type: postgres
+  from: ethereum_token_metas
+  database: ethereum
+  schema: public
+  table: token_metas
+  primary_key: contract_address
+  config:
+    host: localhost
+    port: 5432
+    username: postgres
+    password: 123456
